@@ -1,0 +1,11 @@
+{
+  "name": "logicamirror",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node scripts/serve.mjs",
+    "test": "node --test tests/core/*.test.mjs",
+    "build": "node --check src/app/main.js && node --check src/app/App.js && node --check src/core/verification/verifyPrediction.js && node --check src/infrastructure/ai/providerConfigStore.js && node --check src/infrastructure/ai/scanDocumentApi.js && node --check src/infrastructure/ai/normalizeScannedCheckpoints.js && node --check src/shared/i18n/translations.js && node --check scripts/serve.mjs"
+  }
+}
