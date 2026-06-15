@@ -4,6 +4,7 @@ import { extname, join, normalize, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { checkpointKinds, normalizeScannedCheckpoints } from "../src/infrastructure/ai/normalizeScannedCheckpoints.js";
 
+const VERY_HIGH_SCAN_MAX_TOKENS = 64000;
 const root = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const portArgIndex = process.argv.indexOf("--port");
 const port = Number(portArgIndex >= 0 ? process.argv[portArgIndex + 1] : process.env.PORT) || 4173;
@@ -232,8 +233,7 @@ async function handleScanDocument(request, response) {
     };
 
     const segmentsForPrompt = (document.segments || []).filter((segment) => segment.kind !== "heading");
-    const scanMaxTokens = providerConfig.maxTokens?.["scan-material"] ||
-      Math.min(8000, Math.max(1500, segmentsForPrompt.length * 220));
+    const scanMaxTokens = getConfiguredMaxTokens(providerConfig, "scan-material") || VERY_HIGH_SCAN_MAX_TOKENS;
 
     const apiResponse = await fetch(`${providerConfig.baseUrl}/chat/completions`, {
       method: "POST",
@@ -392,6 +392,12 @@ function chooseModel(providerConfig, taskName) {
     providerConfig.models?.["verify-prediction"] ||
     ""
   );
+}
+
+function getConfiguredMaxTokens(providerConfig, taskName) {
+  const value = providerConfig.maxTokens?.[taskName];
+  const numericValue = Number(value);
+  return Number.isFinite(numericValue) && numericValue > 0 ? numericValue : null;
 }
 
 function validateVerificationRequest(verification) {

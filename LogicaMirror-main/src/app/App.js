@@ -1151,6 +1151,9 @@ function defaultApiConfigTemplate() {
     "generate-hint": "",
     "deep-assist": "",
     "memory-reflection": ""
+  },
+  "maxTokens": {
+    "scan-material": 64000
   }
 }`;
 }
