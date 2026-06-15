@@ -17,10 +17,20 @@ if not exist "%APP_DIR%scripts\serve.mjs" (
   exit /b 1
 )
 
+set "NODE_EXE="
 where node >nul 2>nul
-if errorlevel 1 (
+if not errorlevel 1 set "NODE_EXE=node"
+if not defined NODE_EXE if exist "%ProgramFiles%\nodejs\node.exe" set "NODE_EXE=%ProgramFiles%\nodejs\node.exe"
+if not defined NODE_EXE if exist "%ProgramFiles(x86)%\nodejs\node.exe" set "NODE_EXE=%ProgramFiles(x86)%\nodejs\node.exe"
+if not defined NODE_EXE if exist "%LOCALAPPDATA%\Programs\nodejs\node.exe" set "NODE_EXE=%LOCALAPPDATA%\Programs\nodejs\node.exe"
+if not defined NODE_EXE if exist "%USERPROFILE%\AppData\Local\Programs\nodejs\node.exe" set "NODE_EXE=%USERPROFILE%\AppData\Local\Programs\nodejs\node.exe"
+if not defined NODE_EXE if exist "%LOCALAPPDATA%\Volta\bin\node.exe" set "NODE_EXE=%LOCALAPPDATA%\Volta\bin\node.exe"
+
+if not defined NODE_EXE (
   echo Node.js is required to start LogicaMirror.
-  echo Install it from https://nodejs.org/ and run this file again.
+  echo If Node.js is already installed, close this window and run start-app.bat normally, not as administrator.
+  echo Administrator windows can miss user-only Node.js installs.
+  echo Otherwise install Node.js from https://nodejs.org/ and run this file again.
   pause
   exit /b 1
 )
@@ -36,10 +46,11 @@ if not defined APP_PORT set "APP_PORT=4173"
 set "APP_URL=http://127.0.0.1:%APP_PORT%"
 
 echo Starting LogicaMirror from "%APP_DIR%"...
+echo Using Node.js: %NODE_EXE%
 echo Opening %APP_URL%
-start "" powershell -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -Command "Start-Sleep -Seconds 2; Start-Process '%APP_URL%'"
+start "" /b cmd /c "timeout /t 2 /nobreak >nul && start "" %APP_URL%"
 
-node scripts\serve.mjs
+"%NODE_EXE%" scripts\serve.mjs
 set "EXIT_CODE=%ERRORLEVEL%"
 
 echo.
