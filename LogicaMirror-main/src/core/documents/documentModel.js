@@ -1,4 +1,3 @@
-import { createLocalCheckpoints } from "../checkpoints/createLocalCheckpoints.js";
 import { segmentDocument } from "./segmentDocument.js";
 
 export const supportedLanguages = ["en", "de", "es"];
@@ -12,7 +11,7 @@ export function createStudyDocument({ title, text, language = "en" }) {
     title: title || "Untitled study material",
     language: supportedLanguages.includes(language) ? language : "en",
     segments,
-    checkpoints: createLocalCheckpoints(segments),
+    checkpoints: [],
     createdAt: now,
     updatedAt: now
   };

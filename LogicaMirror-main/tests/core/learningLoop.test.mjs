@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createLocalCheckpoints } from "../../src/core/checkpoints/createLocalCheckpoints.js";
 import { getCheckpointSource, splitSegmentByCheckpoint } from "../../src/core/checkpoints/gating.js";
+import { createStudyDocument } from "../../src/core/documents/documentModel.js";
 import { segmentDocument } from "../../src/core/documents/segmentDocument.js";
 import { verifyPrediction } from "../../src/core/verification/verifyPrediction.js";
 
@@ -13,21 +13,14 @@ test("segments source material into readable units", () => {
   assert.equal(segments[1].kind, "paragraph");
 });
 
-test("creates sparse local checkpoints from meaningful segments", () => {
-  const segments = segmentDocument(`
-A structure is defined as a collection of objects with relations.
+test("creates documents without local fallback checkpoints before remote scan", () => {
+  const document = createStudyDocument({
+    title: "Definitions",
+    text: "A structure is defined as a collection of objects with relations."
+  });
 
-This is filler text without a target.
-
-An invariant is a property that remains fixed under allowed transformations.
-  `);
-
-  const checkpoints = createLocalCheckpoints(segments);
-
-  assert.ok(checkpoints.length >= 1);
-  assert.ok(checkpoints.every((checkpoint) => checkpoint.prompt.length > 0));
-  assert.ok(checkpoints.every((checkpoint) => checkpoint.sourceRange.end > checkpoint.sourceRange.start));
-  assert.ok(checkpoints.some((checkpoint) => checkpoint.target === "structure"));
+  assert.equal(document.checkpoints.length, 0);
+  assert.equal(document.segments.length, 1);
 });
 
 test("splits only the checkpoint source range", () => {
@@ -40,9 +33,10 @@ test("splits only the checkpoint source range", () => {
     id: "checkpoint-0-1",
     segmentIndex: 0,
     kind: "definition",
-    target: "Hidden target",
+    anchorQuote: "Visible setup",
+    target: "Visible setup",
     prompt: "Predict it.",
-    sourceRange: {
+    hiddenRange: {
       start: 15,
       end: 29
     }

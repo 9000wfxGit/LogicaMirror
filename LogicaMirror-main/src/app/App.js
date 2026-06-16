@@ -30,7 +30,7 @@ class LogicaMirrorApp {
     this.fileInput.hidden = true;
     document.body.append(this.fileInput);
 
-    const restored = loadSession();
+    const restored = sanitizeRestoredSession(loadSession());
     const providerConfig = loadProviderConfig();
     this.state = restored || createInitialState(initialDocument);
     this.state.importMessage = "";
@@ -110,7 +110,7 @@ class LogicaMirrorApp {
             </div>
           </div>
           ${this.state.importMessage ? `<div class="inline-message">${escapeHtml(this.state.importMessage)}</div>` : ""}
-          ${this.state.scanMessage ? `<div class="inline-message ${this.state.apiStatus === "error" ? "inline-error" : ""}">${escapeHtml(this.state.scanMessage)}</div>` : ""}
+          ${this.state.scanMessage ? `<div class="inline-message ${["error", "not-configured"].includes(this.state.apiStatus) ? "inline-error" : ""}">${escapeHtml(this.state.scanMessage)}</div>` : ""}
           <article class="source-document" aria-label="Study source">
             ${studyDocument.segments.map((segment) => this.renderSegment(segment)).join("")}
           </article>
@@ -186,7 +186,7 @@ class LogicaMirrorApp {
 
       <section class="concept-focus" aria-label="${this.t("conceptToPredict")}">
         <span>${this.t("conceptToPredict")}</span>
-        <strong>${escapeHtml(checkpoint.target)}</strong>
+        <strong>${escapeHtml(checkpoint.anchorQuote || checkpoint.target)}</strong>
         <em>${escapeHtml(checkpoint.kind.replace("-", " "))}</em>
       </section>
 
@@ -530,7 +530,7 @@ class LogicaMirrorApp {
       const checkpoint = this.getCurrentCheckpoint();
       this.recordLog("info", "review", "Checkpoint source revealed", {
         checkpointId: checkpoint?.id || null,
-        target: checkpoint?.target || null
+        target: checkpoint?.anchorQuote || checkpoint?.target || null
       });
       this.updateCurrentEntry((entry) => ({ ...entry, committed: true, revealed: true }));
       return;
@@ -545,7 +545,7 @@ class LogicaMirrorApp {
       const checkpoint = this.getCurrentCheckpoint();
       this.recordLog("info", "reflection", "Memory status updated", {
         checkpointId: checkpoint?.id || null,
-        target: checkpoint?.target || null,
+        target: checkpoint?.anchorQuote || checkpoint?.target || null,
         status: target.dataset.status
       });
       this.updateCurrentEntry((entry, checkpoint) => ({
@@ -721,8 +721,9 @@ class LogicaMirrorApp {
     }
   }
 
-  async scanDocument() {
+  async scanDocument(documentToScan = this.state.document) {
     const providerConfig = loadProviderConfig();
+    const scanTarget = documentToScan || this.state.document;
 
     if (!providerConfig?.value) {
       this.recordLog("warn", "scan", "Document scan skipped", {
@@ -737,8 +738,8 @@ class LogicaMirrorApp {
     }
 
     this.recordLog("info", "scan", "Document scan started", {
-      documentTitle: this.state.document.title,
-      segmentCount: this.state.document.segments.length
+      documentTitle: scanTarget.title,
+      segmentCount: scanTarget.segments.length
     });
 
     this.setState({
@@ -750,9 +751,13 @@ class LogicaMirrorApp {
 
     try {
       const result = await scanDocumentWithProvider({
-        document: this.state.document,
+        document: scanTarget,
         providerConfig
       });
+
+      if (this.state.document.id !== scanTarget.id) {
+        return;
+      }
 
       if (!result.ok) {
         this.recordLog("error", "scan", "Document scan failed", {
@@ -780,12 +785,16 @@ class LogicaMirrorApp {
         activeCheckpointIndex: 0,
         checkpointEntries: {},
         document: {
-          ...this.state.document,
+          ...scanTarget,
           checkpoints: result.checkpoints,
           updatedAt: new Date().toISOString()
         }
       });
     } catch (error) {
+      if (this.state.document.id !== scanTarget.id) {
+        return;
+      }
+
       this.recordLog("error", "scan", "Document scan crashed", {
         error
       });
@@ -814,8 +823,10 @@ class LogicaMirrorApp {
           document,
           activeCheckpointIndex: 0,
           checkpointEntries: {},
-          importMessage: `${title} loaded.`
+          importMessage: `${title} loaded. Scanning for concept checkpoints...`,
+          scanMessage: ""
         });
+        this.scanDocument(document);
       })
       .catch((error) => {
         this.recordLog("error", "import", "Study file import failed", {
@@ -846,7 +857,7 @@ class LogicaMirrorApp {
       const message = this.t("verificationRequiresApi");
       this.recordLog("error", "verification", "Remote verification blocked", {
         checkpointId: checkpoint.id,
-        target: checkpoint.target,
+        target: checkpoint.anchorQuote || checkpoint.target,
         reason: "missing provider configuration"
       });
       this.updateCurrentEntry((entry) => ({
@@ -866,7 +877,7 @@ class LogicaMirrorApp {
 
     this.recordLog("info", "verification", "Verification started", {
       checkpointId: checkpoint.id,
-      target: checkpoint.target,
+      target: checkpoint.anchorQuote || checkpoint.target,
       kind: checkpoint.kind,
       predictionLength: prediction.length,
       remoteConfigured: true
@@ -884,7 +895,7 @@ class LogicaMirrorApp {
         prediction,
         sourceText,
         segmentText: segment.text,
-        target: checkpoint.target,
+        target: checkpoint.anchorQuote || checkpoint.target,
         prompt: checkpoint.prompt,
         language: this.state.language,
         providerConfig
@@ -1073,6 +1084,26 @@ function createInitialState(document) {
     logsOpen: false,
     logs: [],
     logMessage: ""
+  };
+}
+
+function sanitizeRestoredSession(session) {
+  if (!session?.document) {
+    return session;
+  }
+
+  const checkpoints = Array.isArray(session.document.checkpoints)
+    ? session.document.checkpoints.filter((checkpoint) => checkpoint?.anchorQuote && checkpoint?.hiddenRange)
+    : [];
+
+  return {
+    ...session,
+    activeCheckpointIndex: checkpoints.length > 0 ? Math.min(session.activeCheckpointIndex || 0, checkpoints.length - 1) : 0,
+    checkpointEntries: checkpoints.length > 0 ? session.checkpointEntries || {} : {},
+    document: {
+      ...session.document,
+      checkpoints
+    }
   };
 }
 

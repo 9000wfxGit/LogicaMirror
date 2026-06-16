@@ -232,7 +232,7 @@ async function handleScanDocument(request, response) {
       baseUrl: providerConfig.baseUrl
     };
 
-    const segmentsForPrompt = (document.segments || []).filter((segment) => segment.kind !== "heading");
+    const segmentsForPrompt = document.segments || [];
     const scanMaxTokens = getConfiguredMaxTokens(providerConfig, "scan-material") || VERY_HIGH_SCAN_MAX_TOKENS;
 
     const apiResponse = await fetch(`${providerConfig.baseUrl}/chat/completions`, {
@@ -288,11 +288,10 @@ async function handleScanDocument(request, response) {
 }
 
 function buildScanMessages(document) {
-  const compactSegments = (document.segments || []).map((segment) => ({
-    index: segment.index,
-    kind: segment.kind,
-    text: segment.text
-  }));
+  const compactSegments = document.segments || [];
+  const markedDocument = compactSegments
+    .map((segment) => `[segment ${segment.index} | ${segment.kind}]\n${segment.text}`)
+    .join("\n\n");
 
   const maxCheckpoints = Math.max(1, Math.min(12, Math.ceil(compactSegments.length / 3)));
 
@@ -300,22 +299,36 @@ function buildScanMessages(document) {
     {
       role: "system",
       content:
-        "You scan study material for sparse predictive active recall checkpoints. Return ONLY a JSON object between <json> and </json> tags. No prose before or after. Work across subjects and languages. Do not do keyword spotting. Select conceptually load-bearing moments where understanding depends on predicting an abstract relation, condition, contrast, cause/effect, consequence, interpretive claim, method, rule, or argument move before the source reveals it. Prefer fewer high-quality checkpoints. Avoid isolated names, dates, vocabulary labels, examples, or factual filler unless they carry the concept itself. Headings are excluded from the input; never invent a segmentIndex that was not provided."
+        "LogicaMirror lets a learner read source text, see a term or concept, predict its hidden explanation, then verify against the source. Return only JSON between <json> and </json>. Select anchored term/concept checkpoints, not random important sentences."
     },
     {
       role: "user",
       content: JSON.stringify({
-        task:
-          "Return JSON with a checkpoints array. Each checkpoint must include segmentIndex (must match one of the provided segment indexes), kind, target, prompt, and sourceQuote. target should name the concept or abstract relation to predict, not just a copied answer word. sourceQuote MUST be an exact substring copied verbatim from that segment's text — same casing, same punctuation, same spacing, same diacritics. Do not paraphrase the sourceQuote. At most one checkpoint per segment.",
         constraints: {
           maxCheckpoints,
           oneCheckpointPerSegment: true,
-          sourceQuoteMustBeVerbatim: true
+          quotesMustBeVerbatim: true,
+          anchorRemainsVisible: true,
+          hiddenQuoteMustExplainAnchor: true
         },
         allowedKinds: [...checkpointKinds],
+        task:
+          "Return JSON with a checkpoints array. Each checkpoint must include segmentIndex, kind, anchorQuote, hiddenQuote, prompt, and reason. anchorQuote is the visible term/concept. hiddenQuote is the exact definition, explanation, mechanism, cause, distinction, rule, or process text to blur. Both quotes MUST be exact non-overlapping substrings copied verbatim from the same segment text. Skip a term if the segment does not actually explain it. Do not select headings as checkpoints. At most one checkpoint per segment.",
+        outputSchema: {
+          checkpoints: [
+            {
+              segmentIndex: "number from the marked document",
+              kind: "definition|concept|mechanism|cause-effect|distinction|rule|process",
+              anchorQuote: "exact visible term/concept substring",
+              hiddenQuote: "exact hidden answer substring from the same segment",
+              prompt: "short question asking what the anchor means or implies in context",
+              reason: "short reason this is a valid checkpoint"
+            }
+          ]
+        },
         documentTitle: document.title,
         language: document.language,
-        segments: compactSegments
+        markedDocument
       })
     }
   ];

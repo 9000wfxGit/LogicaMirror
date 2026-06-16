@@ -1,76 +1,123 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { findExpandedSourceRange, normalizeScannedCheckpoints } from "../../src/infrastructure/ai/normalizeScannedCheckpoints.js";
+import { normalizeScannedCheckpoints } from "../../src/infrastructure/ai/normalizeScannedCheckpoints.js";
 
-test("expands tiny AI source quote to the full explanatory sentence", () => {
-  const text =
-    "Zu Beginn des 20. Jahrhunderts galt Europa als politisches und wirtschaftliches Zentrum der Welt. Gleichzeitig nahmen jedoch Spannungen zwischen den europäischen Großmächten immer weiter zu. Nationalismus, Imperialismus, militärische Aufrüstung und komplizierte Bündnissysteme sorgten dafür, dass Europa zunehmend einem Pulverfass ähnelte. Ein einzelner Konflikt konnte ausreichen, um einen großen Krieg auszulösen.";
+const segments = [
+  {
+    index: 0,
+    kind: "paragraph",
+    text:
+      "Open market operations are central bank purchases or sales of securities that change bank reserves and influence short-term interest rates."
+  },
+  {
+    index: 1,
+    kind: "paragraph",
+    text: "Inflation is mentioned here, but the paragraph does not explain it."
+  }
+];
 
-  const range = findExpandedSourceRange(text, "Europa zunehmend einem Pulverfass ähnelte");
-  const hidden = text.slice(range.start, range.end);
-
-  assert.equal(
-    hidden,
-    "Nationalismus, Imperialismus, militärische Aufrüstung und komplizierte Bündnissysteme sorgten dafür, dass Europa zunehmend einem Pulverfass ähnelte."
-  );
-});
-
-test("does not expand a complete source sentence into the next sentence", () => {
-  const text =
-    "Context sentence. Nationalismus und Buendnisse sorgten dafuer, dass Europa zunehmend einem Pulverfass aehnelte. Ein einzelner Konflikt konnte einen grossen Krieg ausloesen.";
-
-  const range = findExpandedSourceRange(
-    text,
-    "Nationalismus und Buendnisse sorgten dafuer, dass Europa zunehmend einem Pulverfass aehnelte."
-  );
-  const hidden = text.slice(range.start, range.end);
-
-  assert.equal(
-    hidden,
-    "Nationalismus und Buendnisse sorgten dafuer, dass Europa zunehmend einem Pulverfass aehnelte."
-  );
-});
-
-test("expands a complete source quote without punctuation to the sentence end", () => {
-  const text =
-    "Context sentence. Nationalismus und Buendnisse sorgten dafuer, dass Europa zunehmend einem Pulverfass aehnelte. Ein einzelner Konflikt konnte einen grossen Krieg ausloesen.";
-
-  const range = findExpandedSourceRange(
-    text,
-    "Nationalismus und Buendnisse sorgten dafuer, dass Europa zunehmend einem Pulverfass aehnelte"
-  );
-  const hidden = text.slice(range.start, range.end);
-
-  assert.equal(
-    hidden,
-    "Nationalismus und Buendnisse sorgten dafuer, dass Europa zunehmend einem Pulverfass aehnelte."
-  );
-});
-
-test("normalizes scanned checkpoints with expanded source ranges", () => {
-  const segments = [
-    {
-      index: 0,
-      kind: "paragraph",
-      text:
-        "Visible context. The important explanation says the alliance system can turn a local conflict into a wider war. Next idea."
-    }
-  ];
-
+test("normalizes exact anchor and hidden explanation quotes", () => {
   const checkpoints = normalizeScannedCheckpoints(
     [
       {
         segmentIndex: 0,
-        kind: "event",
-        target: "alliance system",
-        prompt: "Predict why the alliance system matters.",
-        sourceQuote: "local conflict into a wider war"
+        kind: "definition",
+        anchorQuote: "Open market operations",
+        hiddenQuote:
+          "central bank purchases or sales of securities that change bank reserves and influence short-term interest rates",
+        prompt: "What are open market operations in this context?",
+        reason: "The segment defines the anchor concept."
       }
     ],
     segments
   );
 
-  const hidden = segments[0].text.slice(checkpoints[0].sourceRange.start, checkpoints[0].sourceRange.end);
+  assert.equal(checkpoints.length, 1);
+  assert.equal(checkpoints[0].anchorQuote, "Open market operations");
+  assert.equal(
+    segments[0].text.slice(checkpoints[0].hiddenRange.start, checkpoints[0].hiddenRange.end),
+    "central bank purchases or sales of securities that change bank reserves and influence short-term interest rates"
+  );
+});
 
-  assert.equal(hidden, "The important explanation says the alliance system can turn a local conflict into a wider war.");
+test("rejects missing or paraphrased quotes", () => {
+  assert.throws(
+    () =>
+      normalizeScannedCheckpoints(
+        [
+          {
+            segmentIndex: 0,
+            kind: "definition",
+            anchorQuote: "open-market operations",
+            hiddenQuote: "central bank buying and selling that affects rates",
+            prompt: "What are open market operations?",
+            reason: "Paraphrased instead of copied."
+          }
+        ],
+        segments
+      ),
+    /no usable checkpoints/i
+  );
+});
+
+test("rejects overlapping anchor and hidden spans", () => {
+  assert.throws(
+    () =>
+      normalizeScannedCheckpoints(
+        [
+          {
+            segmentIndex: 0,
+            kind: "definition",
+            anchorQuote: "Open market operations",
+            hiddenQuote:
+              "Open market operations are central bank purchases or sales of securities that change bank reserves",
+            prompt: "What are open market operations?",
+            reason: "Hidden quote includes the visible anchor."
+          }
+        ],
+        segments
+      ),
+    /no usable checkpoints/i
+  );
+});
+
+test("skips terms without explanatory hidden text", () => {
+  assert.throws(
+    () =>
+      normalizeScannedCheckpoints(
+        [
+          {
+            segmentIndex: 1,
+            kind: "concept",
+            anchorQuote: "Inflation",
+            hiddenQuote: "mentioned here",
+            prompt: "What is inflation?",
+            reason: "The segment names the term without a real explanation."
+          }
+        ],
+        segments
+      ),
+    /no usable checkpoints/i
+  );
+});
+
+test("does not expand hidden text beyond the exact model quote", () => {
+  const checkpoints = normalizeScannedCheckpoints(
+    [
+      {
+        segmentIndex: 0,
+        kind: "mechanism",
+        anchorQuote: "bank reserves",
+        hiddenQuote: "influence short-term interest rates",
+        prompt: "What do bank reserves influence here?",
+        reason: "The quoted span states the effect."
+      }
+    ],
+    segments
+  );
+
+  assert.equal(
+    segments[0].text.slice(checkpoints[0].hiddenRange.start, checkpoints[0].hiddenRange.end),
+    "influence short-term interest rates"
+  );
 });

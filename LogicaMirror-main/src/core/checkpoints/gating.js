@@ -3,7 +3,7 @@ export function findCheckpointForSegment(checkpoints, segmentIndex) {
 }
 
 export function splitSegmentByCheckpoint(segment, checkpoint) {
-  if (!checkpoint) {
+  if (!checkpoint?.hiddenRange) {
     return {
       before: segment.text,
       gated: "",
@@ -11,8 +11,8 @@ export function splitSegmentByCheckpoint(segment, checkpoint) {
     };
   }
 
-  const start = clamp(checkpoint.sourceRange.start, 0, segment.text.length);
-  const end = clamp(checkpoint.sourceRange.end, start, segment.text.length);
+  const start = clamp(checkpoint.hiddenRange.start, 0, segment.text.length);
+  const end = clamp(checkpoint.hiddenRange.end, start, segment.text.length);
 
   return {
     before: segment.text.slice(0, start),
